@@ -2,44 +2,59 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>SimpleMemo (Test)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark">
+<title>SimpleMemo (MiniApp Safe)</title>
 <style>
-  :root { --bg:#f5f5f5; --fg:#111; --muted:#6b7280; --border:#e5e7eb; --pri:#111; --priText:#fff; }
-  * { box-sizing: border-box; }
+  :root { --bg:#f5f5f5; --fg:#111; --muted:#6b7280; --border:#e5e7eb; --pri:#111; --priText:#fff; --danger:#dc2626; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
   body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans", sans-serif; background:var(--bg); color:var(--fg); }
-  .app { height: 100dvh; display:flex; flex-direction:column; }
+  .app { min-height: 100dvh; display:flex; flex-direction:column; }
   header { position:sticky; top:0; display:flex; gap:.5rem; align-items:center; padding:.75rem; border-bottom:1px solid var(--border); background:#fff; }
   header .title { font-weight:700; font-size:1.125rem; }
   header .info { margin-left:auto; font-size:.75rem; color:var(--muted); }
+  .banner { background:#fff3cd; color:#664d03; border-bottom:1px solid #ffe69c; padding:.5rem .75rem; font-size:.85rem; }
   main { flex:1; min-height:0; }
   /* List screen */
-  .list-top { display:flex; gap:.5rem; padding:.75rem; border-bottom:1px solid var(--border); background:#fff; }
-  .input { flex:1; padding:.5rem .75rem; border:1px solid var(--border); border-radius:.75rem; }
-  .btn { padding:.5rem .75rem; border-radius:.75rem; border:1px solid var(--border); background:#fff; }
+  .list-top { display:flex; gap:.5rem; padding:.75rem; border-bottom:1px solid var(--border); background:#fff; position:sticky; top:0; z-index:1; }
+  .input { flex:1; padding:.8rem .9rem; border:1px solid var(--border); border-radius:.75rem; font-size:16px; }
+  .btn { padding:.7rem 1rem; border-radius:.9rem; border:1px solid var(--border); background:#fff; font-size:16px; }
   .btn.primary { background:var(--pri); color:var(--priText); border-color:var(--pri); }
-  .count { padding:.5rem .75rem; font-size:.75rem; color:var(--muted); }
-  .list { background:#fff; overflow:auto; border-top:1px solid var(--border); }
-  .item { padding:.75rem; border-bottom:1px solid var(--border); }
+  .count { padding:.5rem .75rem; font-size:.8rem; color:var(--muted); background:#fff; border-bottom:1px solid var(--border); }
+  .list { background:#fff; overflow:auto; -webkit-overflow-scrolling: touch; }
+  .item { padding:.9rem; border-bottom:1px solid var(--border); }
   .item.active { background:#fafafa; }
   .item button.item-main { width:100%; text-align:left; background:none; border:none; padding:0; color:inherit; }
   .titleLine { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .snippet { font-size:.8rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:.25rem; }
-  .time { font-size:.7rem; color:#9ca3af; margin-top:.25rem; }
-  .row { display:flex; gap:.5rem; margin-top:.5rem; }
-  .btn.danger { color:#dc2626; }
-  .empty { padding:1rem; color:var(--muted); font-size:.9rem; }
+  .snippet { font-size:.9rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:.35rem; }
+  .time { font-size:.75rem; color:#9ca3af; margin-top:.35rem; }
+  .row { display:flex; gap:.5rem; margin-top:.6rem; }
+  .btn.danger { color:var(--danger); }
+  .empty { padding:1rem; color:var(--muted); font-size:.95rem; }
   /* Edit screen */
   .editor { height:100%; }
-  .textarea { width:100%; height:100%; padding:1rem; border:none; outline:none; resize:none; background:#fafafa; }
+  .textarea { width:100%; height:calc(100dvh - 140px); padding:1rem; border:none; outline:none; resize:none; background:#fafafa; font-size:16px; }
   /* Bottom nav */
   nav { position:sticky; bottom:0; background:#fff; border-top:1px solid var(--border); padding:.5rem; display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
-  .tab { padding:.6rem; border:1px solid var(--border); border-radius:1rem; background:#fff; }
+  .tab { padding:.8rem; border:1px solid var(--border); border-radius:1rem; background:#fff; font-size:16px; }
   .tab.active { background:var(--pri); color:#fff; border-color:var(--pri); }
+
+  /* Modal */
+  .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; padding:1rem; }
+  .modal { width:100%; max-width:420px; background:#fff; border-radius:1rem; box-shadow:0 10px 30px rgba(0,0,0,.15); }
+  .modal .m-body { padding:1rem 1.1rem; }
+  .modal .m-title { font-weight:700; margin-bottom:.25rem; }
+  .modal .m-text { color:var(--muted); font-size:.95rem; }
+  .modal .m-actions { display:flex; gap:.5rem; padding:0 1.1rem 1rem; }
+  .modal .m-actions .btn { flex:1; }
+  .hidden { display:none !important; }
 </style>
 </head>
 <body>
 <div class="app">
+  <div id="banner" class="banner hidden">Storage is temporary in this environment. Notes may not persist.</div>
+
   <header>
     <div class="title">SimpleMemo</div>
     <div class="info" id="headerInfo"></div>
@@ -53,15 +68,64 @@
   </nav>
 </div>
 
+<!-- Modal for delete confirm -->
+<div id="modalRoot" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="m-body">
+      <div class="m-title">Delete note?</div>
+      <div class="m-text">This action cannot be undone.</div>
+    </div>
+    <div class="m-actions">
+      <button id="modalCancel" class="btn">Cancel</button>
+      <button id="modalOk" class="btn danger">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
-  const LS_KEY = "simplememo.notes.test";
+  const LS_KEY = "simplememo.notes.miniapp";
+  /** storage facade: tries localStorage, falls back to in-memory */
+  let storageMode = "local"; // "local" | "memory"
+  let memoryStore = "[]";
+  function storageGet() {
+    try {
+      if (storageMode === "local") return localStorage.getItem(LS_KEY) ?? "[]";
+      return memoryStore;
+    } catch (e) {
+      storageMode = "memory";
+      return memoryStore;
+    }
+  }
+  function storageSet(v) {
+    try {
+      if (storageMode === "local") { localStorage.setItem(LS_KEY, v); return; }
+      memoryStore = v;
+    } catch (e) {
+      storageMode = "memory";
+      memoryStore = v;
+    }
+  }
+  // feature test (some MiniApp webviews disable/ephemeral storage)
+  try {
+    const k = "__t";
+    localStorage.setItem(k,"1");
+    localStorage.removeItem(k);
+  } catch (e) {
+    storageMode = "memory";
+  }
+
+  // show banner if memory fallback
+  const $banner = document.getElementById("banner");
+  if (storageMode === "memory") $banner.classList.remove("hidden");
+
+  // state
   let notes = [];
   let selectedId = null;
   let screen = "list"; // "list" | "edit"
   let query = "";
 
-  // --- utils ---
+  // utils
   const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
   const fmt = (ts) => new Date(ts).toLocaleString();
   const extractTitle = (content) => {
@@ -69,38 +133,51 @@
     return (first.trim().slice(0,80) || "(Untitled)");
   };
 
-  const save = () => localStorage.setItem(LS_KEY, JSON.stringify(notes));
-  const load = () => {
+  function save() { storageSet(JSON.stringify(notes)); }
+  function load() {
     try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (!raw) return [];
+      const raw = storageGet();
       const arr = JSON.parse(raw) || [];
       return arr.filter(n => n && n.id && typeof n.content === "string")
                 .map(n => ({...n, title: n.title ?? extractTitle(n.content)}));
     } catch { return []; }
-  };
+  }
 
-  // --- state init ---
+  // init
   notes = load();
   if (notes.length) selectedId = notes[0].id;
 
-  // --- DOM refs ---
+  // DOM refs
   const $main = document.getElementById("main");
   const $tabList = document.getElementById("tabList");
   const $tabEdit = document.getElementById("tabEdit");
   const $headerInfo = document.getElementById("headerInfo");
+  const $modalRoot = document.getElementById("modalRoot");
+  const $modalOk = document.getElementById("modalOk");
+  const $modalCancel = document.getElementById("modalCancel");
+  let modalResolve = null;
 
-  // --- renderers ---
+  // modal (confirm replacement)
+  function confirmModal() {
+    $modalRoot.classList.remove("hidden");
+    return new Promise((resolve) => {
+      modalResolve = resolve;
+    });
+  }
+  $modalOk.addEventListener("click", ()=> { $modalRoot.classList.add("hidden"); modalResolve?.(true); });
+  $modalCancel.addEventListener("click", ()=> { $modalRoot.classList.add("hidden"); modalResolve?.(false); });
+  $modalRoot.addEventListener("click", (e)=> {
+    if (e.target === $modalRoot) { $modalRoot.classList.add("hidden"); modalResolve?.(false); }
+  });
+
+  // render
   function render() {
-    // header info
     const sel = notes.find(n => n.id === selectedId);
     $headerInfo.textContent = sel ? `Updated ${fmt(sel.updatedAt)}` : "";
 
-    // tabs
     $tabList.classList.toggle("active", screen === "list");
     $tabEdit.classList.toggle("active", screen === "edit");
 
-    // screen
     if (screen === "list") renderList();
     else renderEdit();
   }
@@ -120,7 +197,7 @@
     const btnNew = document.createElement("button");
     btnNew.className = "btn primary";
     btnNew.textContent = "New";
-    btnNew.addEventListener("click", onCreate);
+    btnNew.addEventListener("click", onCreate, { passive: true });
 
     top.appendChild(input);
     top.appendChild(btnNew);
@@ -169,11 +246,12 @@
         const del = document.createElement("button");
         del.className = "btn danger";
         del.textContent = "Delete";
-        del.addEventListener("click", (e)=> {
+        del.addEventListener("click", async (e)=> {
           e.stopPropagation();
+          const ok = await confirmModal();
+          if (!ok) return;
           onDelete(n.id);
         });
-        // 保険：押下開始時点でもバブリング停止
         del.addEventListener("mousedown", (e)=> e.stopPropagation(), {passive:true});
         del.addEventListener("touchstart", (e)=> e.stopPropagation(), {passive:true});
 
@@ -189,7 +267,6 @@
     wrap.appendChild(count);
     wrap.appendChild(list);
 
-    // mount
     $main.innerHTML = "";
     $main.appendChild(wrap);
   }
@@ -214,20 +291,17 @@
     ta.value = sel.content;
     ta.addEventListener("input", (e)=>{
       const v = e.target.value;
-      // update selected
       const idx = notes.findIndex(n => n.id === sel.id);
       if (idx >= 0) {
         notes[idx] = { ...notes[idx], content: v, title: extractTitle(v), updatedAt: Date.now() };
         save();
-        // ヘッダーの更新時刻を更新するために再描画
         $headerInfo.textContent = `Updated ${fmt(notes[idx].updatedAt)}`;
       }
-    });
+    }, { passive: true });
 
     editorWrap.appendChild(ta);
     $main.innerHTML = "";
     $main.appendChild(editorWrap);
-    // フォーカス
     setTimeout(()=> ta.focus(), 0);
   }
 
@@ -240,7 +314,7 @@
     );
   }
 
-  // --- actions ---
+  // actions
   function onCreate() {
     const now = Date.now();
     const n = { id: uid(), title: "(Untitled)", content: "", createdAt: now, updatedAt: now };
@@ -252,7 +326,6 @@
   }
 
   function onDelete(id) {
-    if (!confirm("Delete this note?")) return;
     notes = notes.filter(n => n.id !== id);
     if (selectedId === id) selectedId = null;
     save();
@@ -263,17 +336,15 @@
   $tabList.addEventListener("click", ()=> { screen = "list"; render(); });
   $tabEdit.addEventListener("click", ()=> { screen = "edit"; render(); });
 
-  // keyboard: Ctrl/Cmd+N
-  window.addEventListener("keydown", (e)=>{
-    if ((e.ctrlKey || e.metaKey) && (e.key || "").toLowerCase() === "n") {
-      e.preventDefault();
-      onCreate();
-    }
-  });
-
   // first render
   render();
+
+  // optional: request persistent storage (supported browsersのみ)
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(()=>{});
+  }
 })();
 </script>
 </body>
 </html>
+
