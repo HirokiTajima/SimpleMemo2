@@ -1,103 +1,267 @@
-import Image from "next/image";
+"use client";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-export default function Home() {
+type Note = {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+const LS_KEY = "simplememo.notes.v9";
+type Screen = "list" | "edit";
+
+const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+const formatDate = (ts: number) =>
+  new Date(ts).toLocaleDateString() + " " + new Date(ts).toLocaleTimeString();
+const extractTitle = (content: string) => {
+  const firstLine = (content ?? "").split(/\r?\n/)[0] || "Untitled";
+  return (firstLine.trim().slice(0, 40) || "Untitled");
+};
+
+const loadNotes = (): Note[] => {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as Note[];
+    return arr.map((n) => ({
+      ...n,
+      title: n.title ?? extractTitle(n.content),
+    }));
+  } catch {
+    return [];
+  }
+};
+const saveNotes = (notes: Note[]) =>
+  localStorage.setItem(LS_KEY, JSON.stringify(notes));
+
+export default function Page() {
+  return <App />;
+}
+
+function App() {
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [screen, setScreen] = useState<Screen>("list");
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmTargetId, setConfirmTargetId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNotes(loadNotes());
+  }, []);
+  useEffect(() => saveNotes(notes), [notes]);
+
+  const selected = useMemo(
+    () => notes.find((n) => n.id === selectedId) || null,
+    [notes, selectedId]
+  );
+
+  function createNote() {
+    const now = Date.now();
+    const n: Note = {
+      id: uid(),
+      title: "Untitled",
+      content: "",
+      createdAt: now,
+      updatedAt: now,
+    };
+    setNotes((prev) => [n, ...prev]);
+    setSelectedId(n.id);
+    setScreen("edit");
+  }
+
+  function updateNoteContent(content: string) {
+    if (!selected) return;
+    setNotes((prev) =>
+      prev.map((n) =>
+        n.id === selected.id
+          ? {
+              ...n,
+              content,
+              title: extractTitle(content),
+              updatedAt: Date.now(),
+            }
+          : n
+      )
+    );
+  }
+
+  function requestDelete(id: string) {
+    setConfirmTargetId(id);
+    setConfirmOpen(true);
+  }
+  function confirmDelete() {
+    if (!confirmTargetId) return;
+    setNotes((prev) => prev.filter((n) => n.id !== confirmTargetId));
+    if (selectedId === confirmTargetId) setSelectedId(null);
+    setConfirmTargetId(null);
+    setConfirmOpen(false);
+  }
+  function cancelDelete() {
+    setConfirmTargetId(null);
+    setConfirmOpen(false);
+  }
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="h-screen w-full flex flex-col bg-neutral-50 text-neutral-900">
+      <header className="sticky top-0 z-10 text-center font-semibold text-lg p-4 bg-white shadow-md">
+        SimpleMemo
+      </header>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+      <main className="flex-1 min-h-0">
+        {screen === "list" ? (
+          <ListScreen
+            notes={notes}
+            onCreate={createNote}
+            onOpen={(id) => {
+              setSelectedId(id);
+              setScreen("edit");
+            }}
+            onRequestDelete={requestDelete}
+          />
+        ) : (
+          <EditScreen
+            selected={selected}
+            onChange={updateNoteContent}
+            onBack={() => setScreen("list")}
+          />
+        )}
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+
+      {/* Bottom bar: only List + New */}
+      <nav className="sticky bottom-0 bg-white border-t flex justify-around py-2 shadow-inner">
+        <button
+          className="flex flex-col items-center text-sm text-neutral-700"
+          onClick={() => setScreen("list")}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          📋 <span>List</span>
+        </button>
+        <button
+          className="flex flex-col items-center text-sm text-neutral-700"
+          onClick={createNote}
         >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          ➕ <span>New</span>
+        </button>
+      </nav>
+
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center"
+          onClick={(e) => {
+            if (e.currentTarget === e.target) cancelDelete();
+          }}
         >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          <div className="w-72 bg-white rounded-2xl shadow-lg p-4">
+            <div className="font-semibold text-lg mb-2">Delete note?</div>
+            <div className="text-sm text-neutral-600 mb-4">
+              This cannot be undone.
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="flex-1 py-2 border rounded-xl"
+                onClick={cancelDelete}
+              >
+                Cancel
+              </button>
+              <button
+                className="flex-1 py-2 border rounded-xl text-red-600"
+                onClick={confirmDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ListScreen({
+  notes,
+  onCreate,
+  onOpen,
+  onRequestDelete,
+}: {
+  notes: Note[];
+  onCreate: () => void;
+  onOpen: (id: string) => void;
+  onRequestDelete: (id: string) => void;
+}) {
+  return (
+    <div className="h-full overflow-auto p-3 space-y-3">
+      {notes.map((n) => (
+        <div key={n.id} className="rounded-2xl bg-white shadow p-4">
+          <div className="font-medium text-base">{n.title}</div>
+          <div className="text-xs text-neutral-500 truncate mt-1">
+            {n.content.replace(/\n/g, " ")}
+          </div>
+          <div className="text-[10px] text-neutral-400 mt-1">
+            {formatDate(n.updatedAt)}
+          </div>
+          <div className="mt-3 flex justify-end gap-3">
+            <button
+              className="px-3 py-1 rounded-lg border border-neutral-400 text-neutral-800 text-sm"
+              onClick={() => onOpen(n.id)}
+            >
+              Open
+            </button>
+            <button
+              className="px-3 py-1 rounded-lg border border-neutral-400 text-red-600 text-sm"
+              onClick={() => onRequestDelete(n.id)}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ))}
+      {notes.length === 0 && (
+        <div className="text-center text-neutral-500 mt-20">
+          No notes yet. Tap ➕ New to start.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EditScreen({
+  selected,
+  onChange,
+  onBack,
+}: {
+  selected: Note | null;
+  onChange: (v: string) => void;
+  onBack: () => void;
+}) {
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    editorRef.current?.focus();
+  }, [selected?.id]);
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex items-center p-3 bg-white border-b shadow-sm">
+        <button onClick={onBack} className="text-neutral-700 mr-3">
+          ← Back
+        </button>
+        <div className="font-medium text-sm">
+          {selected ? selected.title : "No note selected"}
+        </div>
+      </div>
+      {selected ? (
+        <textarea
+          ref={editorRef}
+          className="flex-1 p-4 outline-none resize-none bg-neutral-50 text-base"
+          placeholder={"Write your note here...\n\nFirst line will be the title."}
+          value={selected.content}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      ) : (
+        <div className="flex-1 grid place-items-center text-neutral-400">
+          Select a note from List.
+        </div>
+      )}
     </div>
   );
 }
