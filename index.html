@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SimpleMemo (Test)</title>
+<style>
+  :root { --bg:#f5f5f5; --fg:#111; --muted:#6b7280; --border:#e5e7eb; --pri:#111; --priText:#fff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans", sans-serif; background:var(--bg); color:var(--fg); }
+  .app { height: 100dvh; display:flex; flex-direction:column; }
+  header { position:sticky; top:0; display:flex; gap:.5rem; align-items:center; padding:.75rem; border-bottom:1px solid var(--border); background:#fff; }
+  header .title { font-weight:700; font-size:1.125rem; }
+  header .info { margin-left:auto; font-size:.75rem; color:var(--muted); }
+  main { flex:1; min-height:0; }
+  /* List screen */
+  .list-top { display:flex; gap:.5rem; padding:.75rem; border-bottom:1px solid var(--border); background:#fff; }
+  .input { flex:1; padding:.5rem .75rem; border:1px solid var(--border); border-radius:.75rem; }
+  .btn { padding:.5rem .75rem; border-radius:.75rem; border:1px solid var(--border); background:#fff; }
+  .btn.primary { background:var(--pri); color:var(--priText); border-color:var(--pri); }
+  .count { padding:.5rem .75rem; font-size:.75rem; color:var(--muted); }
+  .list { background:#fff; overflow:auto; border-top:1px solid var(--border); }
+  .item { padding:.75rem; border-bottom:1px solid var(--border); }
+  .item.active { background:#fafafa; }
+  .item button.item-main { width:100%; text-align:left; background:none; border:none; padding:0; color:inherit; }
+  .titleLine { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .snippet { font-size:.8rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:.25rem; }
+  .time { font-size:.7rem; color:#9ca3af; margin-top:.25rem; }
+  .row { display:flex; gap:.5rem; margin-top:.5rem; }
+  .btn.danger { color:#dc2626; }
+  .empty { padding:1rem; color:var(--muted); font-size:.9rem; }
+  /* Edit screen */
+  .editor { height:100%; }
+  .textarea { width:100%; height:100%; padding:1rem; border:none; outline:none; resize:none; background:#fafafa; }
+  /* Bottom nav */
+  nav { position:sticky; bottom:0; background:#fff; border-top:1px solid var(--border); padding:.5rem; display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+  .tab { padding:.6rem; border:1px solid var(--border); border-radius:1rem; background:#fff; }
+  .tab.active { background:var(--pri); color:#fff; border-color:var(--pri); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title">SimpleMemo</div>
+    <div class="info" id="headerInfo"></div>
+  </header>
+
+  <main id="main"></main>
+
+  <nav>
+    <button class="tab" id="tabList">List</button>
+    <button class="tab" id="tabEdit">Edit</button>
+  </nav>
+</div>
+
+<script>
+(function(){
+  const LS_KEY = "simplememo.notes.test";
+  let notes = [];
+  let selectedId = null;
+  let screen = "list"; // "list" | "edit"
+  let query = "";
+
+  // --- utils ---
+  const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const fmt = (ts) => new Date(ts).toLocaleString();
+  const extractTitle = (content) => {
+    const first = (content || "").split(/\r?\n/)[0] || "(Untitled)";
+    return (first.trim().slice(0,80) || "(Untitled)");
+  };
+
+  const save = () => localStorage.setItem(LS_KEY, JSON.stringify(notes));
+  const load = () => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw) || [];
+      return arr.filter(n => n && n.id && typeof n.content === "string")
+                .map(n => ({...n, title: n.title ?? extractTitle(n.content)}));
+    } catch { return []; }
+  };
+
+  // --- state init ---
+  notes = load();
+  if (notes.length) selectedId = notes[0].id;
+
+  // --- DOM refs ---
+  const $main = document.getElementById("main");
+  const $tabList = document.getElementById("tabList");
+  const $tabEdit = document.getElementById("tabEdit");
+  const $headerInfo = document.getElementById("headerInfo");
+
+  // --- renderers ---
+  function render() {
+    // header info
+    const sel = notes.find(n => n.id === selectedId);
+    $headerInfo.textContent = sel ? `Updated ${fmt(sel.updatedAt)}` : "";
+
+    // tabs
+    $tabList.classList.toggle("active", screen === "list");
+    $tabEdit.classList.toggle("active", screen === "edit");
+
+    // screen
+    if (screen === "list") renderList();
+    else renderEdit();
+  }
+
+  function renderList() {
+    const wrap = document.createElement("div");
+    // top controls
+    const top = document.createElement("div");
+    top.className = "list-top";
+
+    const input = document.createElement("input");
+    input.className = "input";
+    input.placeholder = "Search...";
+    input.value = query;
+    input.addEventListener("input", (e)=>{ query = e.target.value; render(); });
+
+    const btnNew = document.createElement("button");
+    btnNew.className = "btn primary";
+    btnNew.textContent = "New";
+    btnNew.addEventListener("click", onCreate);
+
+    top.appendChild(input);
+    top.appendChild(btnNew);
+
+    const count = document.createElement("div");
+    count.className = "count";
+    count.textContent = `${notes.length} notes`;
+
+    const list = document.createElement("div");
+    list.className = "list";
+
+    const filtered = getFiltered();
+    if (filtered.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = 'No notes. Press "New" to create.';
+      list.appendChild(empty);
+    } else {
+      filtered.forEach(n => {
+        const item = document.createElement("div");
+        item.className = "item" + (selectedId === n.id ? " active" : "");
+
+        const mainBtn = document.createElement("button");
+        mainBtn.className = "item-main";
+        mainBtn.addEventListener("click", ()=> { selectedId = n.id; screen = "edit"; render(); });
+
+        const title = document.createElement("div");
+        title.className = "titleLine";
+        title.textContent = n.title || "(Untitled)";
+
+        const snip = document.createElement("div");
+        snip.className = "snippet";
+        snip.textContent = (n.content || "").replace(/\n/g, " ");
+
+        const time = document.createElement("div");
+        time.className = "time";
+        time.textContent = fmt(n.updatedAt);
+
+        mainBtn.appendChild(title);
+        mainBtn.appendChild(snip);
+        mainBtn.appendChild(time);
+
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const del = document.createElement("button");
+        del.className = "btn danger";
+        del.textContent = "Delete";
+        del.addEventListener("click", (e)=> {
+          e.stopPropagation();
+          onDelete(n.id);
+        });
+        // 保険：押下開始時点でもバブリング停止
+        del.addEventListener("mousedown", (e)=> e.stopPropagation(), {passive:true});
+        del.addEventListener("touchstart", (e)=> e.stopPropagation(), {passive:true});
+
+        row.appendChild(del);
+
+        item.appendChild(mainBtn);
+        item.appendChild(row);
+        list.appendChild(item);
+      });
+    }
+
+    wrap.appendChild(top);
+    wrap.appendChild(count);
+    wrap.appendChild(list);
+
+    // mount
+    $main.innerHTML = "";
+    $main.appendChild(wrap);
+  }
+
+  function renderEdit() {
+    const editorWrap = document.createElement("div");
+    editorWrap.className = "editor";
+
+    const sel = notes.find(n => n.id === selectedId);
+    if (!sel) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = 'Select a note from "List" or create a new one.';
+      $main.innerHTML = "";
+      $main.appendChild(empty);
+      return;
+    }
+
+    const ta = document.createElement("textarea");
+    ta.className = "textarea";
+    ta.placeholder = "Write your note here...\n\nFirst line will be the title.";
+    ta.value = sel.content;
+    ta.addEventListener("input", (e)=>{
+      const v = e.target.value;
+      // update selected
+      const idx = notes.findIndex(n => n.id === sel.id);
+      if (idx >= 0) {
+        notes[idx] = { ...notes[idx], content: v, title: extractTitle(v), updatedAt: Date.now() };
+        save();
+        // ヘッダーの更新時刻を更新するために再描画
+        $headerInfo.textContent = `Updated ${fmt(notes[idx].updatedAt)}`;
+      }
+    });
+
+    editorWrap.appendChild(ta);
+    $main.innerHTML = "";
+    $main.appendChild(editorWrap);
+    // フォーカス
+    setTimeout(()=> ta.focus(), 0);
+  }
+
+  function getFiltered() {
+    const q = (query || "").trim().toLowerCase();
+    const sorted = [...notes].sort((a,b) => b.updatedAt - a.updatedAt);
+    if (!q) return sorted;
+    return sorted.filter(n =>
+      (n.title || "").toLowerCase().includes(q) || (n.content || "").toLowerCase().includes(q)
+    );
+  }
+
+  // --- actions ---
+  function onCreate() {
+    const now = Date.now();
+    const n = { id: uid(), title: "(Untitled)", content: "", createdAt: now, updatedAt: now };
+    notes = [n, ...notes];
+    selectedId = n.id;
+    save();
+    screen = "edit";
+    render();
+  }
+
+  function onDelete(id) {
+    if (!confirm("Delete this note?")) return;
+    notes = notes.filter(n => n.id !== id);
+    if (selectedId === id) selectedId = null;
+    save();
+    render();
+  }
+
+  // bottom tabs
+  $tabList.addEventListener("click", ()=> { screen = "list"; render(); });
+  $tabEdit.addEventListener("click", ()=> { screen = "edit"; render(); });
+
+  // keyboard: Ctrl/Cmd+N
+  window.addEventListener("keydown", (e)=>{
+    if ((e.ctrlKey || e.metaKey) && (e.key || "").toLowerCase() === "n") {
+      e.preventDefault();
+      onCreate();
+    }
+  });
+
+  // first render
+  render();
+})();
+</script>
+</body>
+</html>
