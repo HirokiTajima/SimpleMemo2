@@ -1,5 +1,5 @@
 'use client';
-import { MiniKit, VerificationLevel } from '@worldcoin/minikit-js';
+import { MiniKit } from '@worldcoin/minikit-js';
 import { useEffect, useState } from 'react';
 
 export default function VerifyGate({ children }: { children: React.ReactNode }) {
@@ -7,11 +7,22 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
   const [isInstalled, setIsInstalled] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userAddress, setUserAddress] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if already verified
-    if (typeof window !== 'undefined' && localStorage.getItem('wld_verified') === '1') {
-      setOk(true);
+    // Check if already authenticated
+    if (typeof window !== 'undefined') {
+      const savedAuth = localStorage.getItem('wallet_auth');
+      if (savedAuth) {
+        try {
+          const authData = JSON.parse(savedAuth);
+          setUserAddress(authData.address);
+          setOk(true);
+        } catch (e) {
+          console.error('Failed to parse saved auth:', e);
+          localStorage.removeItem('wallet_auth');
+        }
+      }
     }
 
     // Check if MiniKit is installed after component mount
@@ -26,58 +37,60 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
     return () => clearTimeout(timer);
   }, []);
 
-  async function handleVerify() {
+  async function handleAuth() {
     setError(null);
 
-    const actionId = process.env.NEXT_PUBLIC_ACTION_ID;
-
-    if (!actionId) {
-      setError('Action ID not configured. Please check environment variables.');
-      console.error('NEXT_PUBLIC_ACTION_ID is not set');
-      return;
-    }
-
     try {
-      console.log('Starting verification with action:', actionId);
+      // Generate a random nonce for security
+      const nonce = Math.random().toString(36).substring(2, 15);
 
-      const res = await MiniKit.commands.verify({
-        action: actionId,
-        verification_level: VerificationLevel.Device,
+      console.log('Starting wallet authentication...');
+
+      const res = await MiniKit.commands.walletAuth({
+        nonce,
+        statement: 'Sign in to SimpleMemo',
+        expirationTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       });
 
-      console.log('Verification response:', res);
+      console.log('WalletAuth response:', res);
 
       // Check response structure based on MiniKit types
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const payload = res as any;
 
       if (payload && payload.status === 'success') {
-        // Success: proof received from World ID
-        console.log('Verification successful!', {
-          proof: payload.proof,
-          merkle_root: payload.merkle_root,
-          nullifier_hash: payload.nullifier_hash,
-          verification_level: payload.verification_level,
+        // Success: wallet authenticated
+        console.log('Authentication successful!', {
+          address: payload.address,
+          message: payload.message,
+          signature: payload.signature,
         });
 
-        // Store verification state
-        // Note: In production, you should verify the proof on your backend
-        localStorage.setItem('wld_verified', '1');
+        // Store authentication state
+        const authData = {
+          address: payload.address,
+          message: payload.message,
+          signature: payload.signature,
+          timestamp: Date.now(),
+        };
+        localStorage.setItem('wallet_auth', JSON.stringify(authData));
+        setUserAddress(payload.address);
         setOk(true);
       } else if (payload && payload.status === 'error') {
-        // Error response from World ID
+        // Error response from WalletAuth
         const errorCode = payload.error_code || 'unknown_error';
-        setError(`Verification error: ${errorCode}`);
-        console.error('World ID error:', payload);
+        const errorDetails = payload.details || '';
+        setError(`Authentication error: ${errorCode} - ${errorDetails}`);
+        console.error('WalletAuth error:', payload);
       } else {
         // Unexpected response format
         setError('Unexpected response format. Please try again.');
         console.error('Unexpected response:', res);
       }
     } catch (e) {
-      console.error('Verification error:', e);
+      console.error('Authentication error:', e);
       const errorMessage = e instanceof Error ? e.message : 'Unknown error occurred';
-      setError(`Verification failed: ${errorMessage}`);
+      setError(`Authentication failed: ${errorMessage}`);
     }
   }
 
@@ -115,7 +128,7 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
     );
   }
 
-  // In World App but not verified yet
+  // In World App but not authenticated yet
   if (!ok) {
     return (
       <div style={{
@@ -128,8 +141,10 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
         fontFamily: 'system-ui',
         textAlign: 'center'
       }}>
-        <h3>Verify with World ID</h3>
-        <p style={{marginBottom: 20, color: '#666'}}>Device Level verification required</p>
+        <h3>Sign In to SimpleMemo</h3>
+        <p style={{marginBottom: 20, color: '#666'}}>
+          Connect your World App wallet to continue
+        </p>
         {error && (
           <div style={{
             marginBottom: 20,
@@ -144,7 +159,7 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
           </div>
         )}
         <button
-          onClick={handleVerify}
+          onClick={handleAuth}
           style={{
             padding: '12px 24px',
             fontSize: 16,
@@ -155,7 +170,7 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
             cursor: 'pointer'
           }}
         >
-          Verify to Continue
+          Sign In with Wallet
         </button>
       </div>
     );
