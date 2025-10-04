@@ -47,13 +47,32 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
 
       console.log('Verification response:', res);
 
+      // Check response structure based on MiniKit types
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (res && (res as any).finalPayload) {
+      const payload = res as any;
+
+      if (payload && payload.status === 'success') {
+        // Success: proof received from World ID
+        console.log('Verification successful!', {
+          proof: payload.proof,
+          merkle_root: payload.merkle_root,
+          nullifier_hash: payload.nullifier_hash,
+          verification_level: payload.verification_level,
+        });
+
+        // Store verification state
+        // Note: In production, you should verify the proof on your backend
         localStorage.setItem('wld_verified', '1');
         setOk(true);
+      } else if (payload && payload.status === 'error') {
+        // Error response from World ID
+        const errorCode = payload.error_code || 'unknown_error';
+        setError(`Verification error: ${errorCode}`);
+        console.error('World ID error:', payload);
       } else {
-        setError('Verification response invalid. Please try again.');
-        console.error('Invalid response:', res);
+        // Unexpected response format
+        setError('Unexpected response format. Please try again.');
+        console.error('Unexpected response:', res);
       }
     } catch (e) {
       console.error('Verification error:', e);
