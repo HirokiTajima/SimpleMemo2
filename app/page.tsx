@@ -114,7 +114,6 @@ function App() {
         {screen === "list" ? (
           <ListScreen
             notes={notes}
-            onCreate={createNote}
             onOpen={(id) => {
               setSelectedId(id);
               setScreen("edit");
@@ -181,12 +180,10 @@ function App() {
 
 function ListScreen({
   notes,
-  onCreate,
   onOpen,
   onRequestDelete,
 }: {
   notes: Note[];
-  onCreate: () => void;
   onOpen: (id: string) => void;
   onRequestDelete: (id: string) => void;
 }) {

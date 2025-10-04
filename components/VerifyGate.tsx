@@ -16,7 +16,8 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
       const res = await MiniKit.commands.verify({
         action: process.env.NEXT_PUBLIC_WLD_ACTION_ID!,
       });
-      if (res.success) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (res && (res as any).finalPayload) {
         localStorage.setItem('wld_verified', '1');
         setOk(true);
       }
