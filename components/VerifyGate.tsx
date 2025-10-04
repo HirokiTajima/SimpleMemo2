@@ -44,21 +44,30 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
       // Generate a random nonce for security
       const nonce = Math.random().toString(36).substring(2, 15);
 
-      console.log('Starting wallet authentication...');
+      console.log('Starting wallet authentication with nonce:', nonce);
 
-      const res = await MiniKit.commands.walletAuth({
+      // Use commandsAsync instead of commands for async/await
+      const result = await MiniKit.commandsAsync.walletAuth({
         nonce,
         statement: 'Sign in to SimpleMemo',
         expirationTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       });
 
-      console.log('WalletAuth response:', res);
+      console.log('WalletAuth full result:', JSON.stringify(result, null, 2));
+      console.log('Command payload:', result.commandPayload);
+      console.log('Final payload:', result.finalPayload);
 
-      // Check response structure based on MiniKit types
+      // Check finalPayload response from World App
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const payload = res as any;
+      const payload = result.finalPayload as any;
 
-      if (payload && payload.status === 'success') {
+      if (!payload) {
+        setError('No response from World App. Please try again.');
+        console.error('finalPayload is null or undefined');
+        return;
+      }
+
+      if (payload.status === 'success') {
         // Success: wallet authenticated
         console.log('Authentication successful!', {
           address: payload.address,
@@ -76,20 +85,20 @@ export default function VerifyGate({ children }: { children: React.ReactNode }) 
         localStorage.setItem('wallet_auth', JSON.stringify(authData));
         setUserAddress(payload.address);
         setOk(true);
-      } else if (payload && payload.status === 'error') {
+      } else if (payload.status === 'error') {
         // Error response from WalletAuth
         const errorCode = payload.error_code || 'unknown_error';
         const errorDetails = payload.details || '';
-        setError(`Authentication error: ${errorCode} - ${errorDetails}`);
+        setError(`Authentication error: ${errorCode}${errorDetails ? ` - ${errorDetails}` : ''}`);
         console.error('WalletAuth error:', payload);
       } else {
         // Unexpected response format
-        setError('Unexpected response format. Please try again.');
-        console.error('Unexpected response:', res);
+        setError(`Unexpected response format: ${JSON.stringify(payload)}`);
+        console.error('Unexpected payload structure:', payload);
       }
     } catch (e) {
-      console.error('Authentication error:', e);
-      const errorMessage = e instanceof Error ? e.message : 'Unknown error occurred';
+      console.error('Authentication exception:', e);
+      const errorMessage = e instanceof Error ? e.message : String(e);
       setError(`Authentication failed: ${errorMessage}`);
     }
   }
